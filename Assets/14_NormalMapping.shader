@@ -67,7 +67,6 @@ Shader "Unlit/14_NormalMapping"
         }
 
         uniform float4 _LightColor0; // メインのディレクショナルライトの色
-        uniform float4 _WorldSpaceLightPos0; // メインのディレクショナルライトの位置/方向
         
         fixed4 frag (v2f i) : SV_Target
         {
