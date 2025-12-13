@@ -4,98 +4,97 @@ Shader "Unlit/14_NormalMapping"
     {
         _MainTex ("Albedo", 2D) = "white" {}
         _NormalTex ("Normal Map", 2D) = "bump" {}
+        _LightColor ("Light Color", Color) = (1,1,1,1)
+        _LightDir ("Light Direction", Vector) = (0.5, 1, 0.3, 0)
+        _SpecularPower ("Specular Power", Float) = 32
+        _SpecularIntensity ("Specular Intensity", Float) = 1
     }
-
     SubShader
     {
         Tags { "RenderType"="Opaque" }
-
         Pass
         {
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-
             #include "UnityCG.cginc"
 
             struct appdata
-            {     
-               float4 vertex  : POSITION;
-               float2 uv      : TEXCOORD0;
-               float3 normal : NORMAL;
-               float4 tangent : TANGENT;
+            {
+                float4 vertex : POSITION;
+                float2 uv : TEXCOORD0;
+                float3 normal : NORMAL;
+                float4 tangent : TANGENT;
             };
 
-        struct v2f
-        {
-            float4 vertex  : SV_POSITION; // クリップ空間座標
-            float2 uv      : TEXCOORD0;   // UV座標
-            
-            // TBNベクトルをワールド空間で格納
-            float3 T : TEXCOORD1; // ワールド空間の接線 (Tangent)
-            float3 B : TEXCOORD2; // ワールド空間の従法線 (Binormal)
-            float3 N : TEXCOORD3; // ワールド空間の法線 (Normal)
-            
-            float3 worldPos : TEXCOORD4; // ワールド空間の頂点位置
-        };
+            struct v2f
+            {
+                float2 uv : TEXCOORD0;
+                float4 vertex : SV_POSITION;
+                float3 worldPos : TEXCOORD1;
+                float3 T : TEXCOORD2;
+                float3 B : TEXCOORD3;
+                float3 N : TEXCOORD4;
+            };
 
-         sampler2D _MainTex;
-         sampler2D _NormalTex;
+            sampler2D _MainTex;
+            sampler2D _NormalTex;
+            fixed4 _LightColor;
+            float4 _LightDir;
+            float _SpecularPower;
+            float _SpecularIntensity;
 
-        v2f vert (appdata v)
-        {
-            v2f o;
-            // クリップ空間の頂点位置
-            o.vertex = UnityObjectToClipPos(v.vertex);
-            // ワールド空間の頂点位置
-            o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
-            // UV座標
-            o.uv = v.uv;
-        
-            // TBNベクトルをワールド空間に変換
-            // UnityCG.cginc のマクロを使えば簡単ですが、手動で計算
-            float3 N = UnityObjectToWorldNormal(v.normal);
-            float3 T = normalize(mul((float3x3)unity_ObjectToWorld, v.tangent.xyz));
-            // 従法線を計算 (v.tangent.w がフリップの有無を示す)
-            float3 B = cross(N, T) * v.tangent.w;
-        
-            o.N = normalize(N);
-            o.T = normalize(T);
-            o.B = normalize(B);
-            
-            return o;
-        }
+            v2f vert(appdata v)
+            {
+                v2f o;
+                o.vertex = UnityObjectToClipPos(v.vertex);
+                o.uv = v.uv;
+                o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
 
-        uniform float4 _LightColor0; // メインのディレクショナルライトの色
-        uniform float4 _WorldSpaceLightPos0; // メインのディレクショナルライトの位置/方向
-        
-        fixed4 frag (v2f i) : SV_Target
-        {
-            // 1. 法線の準備 (接空間 -> ワールド空間)
-            float3 nMap = UnpackNormal(tex2D(_NormalTex, i.uv)); // UnpackNormal を使うのが一般的
-            
-            // TBN行列（ワールド空間のTBNベクトル）を使って変換
-            // TBN行列 M = [i.T, i.B, i.N]
-            float3x3 TBN = float3x3(i.T, i.B, i.N);
-            float3 wNormal = normalize(mul(TBN, nMap));
-        
-            // 2. ライトベクトルの準備
-            // _WorldSpaceLightPos0.w が 0 の場合（ディレクショナルライト）
-            float3 lightDir = normalize(_WorldSpaceLightPos0.xyz);
-            
-            // 3. ライティング計算（ディフューズ光）
-            // Lambertian反射モデル
-            float NdotL = max(0.0, dot(wNormal, lightDir));
-            float3 diffuse = NdotL * _LightColor0.rgb;
-        
-            // 4. アルベド（メインテクスチャ）のサンプリング
-            fixed4 albedo = tex2D(_MainTex, i.uv);
-            
-            // 5. 最終色の計算
-            fixed3 finalColor = albedo.rgb * diffuse;
-        
-            return fixed4(finalColor, albedo.a);
-        }
+                float3 t = normalize(mul((float3x3)unity_ObjectToWorld, v.tangent.xyz));
+                float3 n = normalize(mul((float3x3)unity_ObjectToWorld, v.normal));
+                float3 b = cross(n, t) * v.tangent.w;
+
+                o.T = t;
+                o.B = b;
+                o.N = n;
+                return o;
+            }
+
+            fixed4 frag(v2f i) : SV_Target
+            {
+                // ノーマルマップの値を[-1, 1]に変換
+                float3 normalTS = tex2D(_NormalTex, i.uv).xyz * 2 - 1;
+
+                // TBN行列を用いて接線空間からワールド空間へ変換
+                float3x3 TBN = float3x3(i.T, i.B, i.N);
+                float3 normalWS = normalize(mul(TBN, normalTS));
+
+                // ライト方向を正規化
+                float3 lightDir = normalize(_LightDir.xyz);
+
+                // ディフューズ成分
+                float diff = saturate(dot(normalWS, lightDir));
+                fixed4 diffuse = diff * _LightColor;
+
+                // 視線方向
+                float3 viewDir = normalize(_WorldSpaceCameraPos - i.worldPos);
+
+                // スペキュラ成分（Phong反射モデル）
+                float3 reflectDir = reflect(-lightDir, normalWS);
+                float spec = pow(saturate(dot(viewDir, reflectDir)), _SpecularPower) * _SpecularIntensity;
+                fixed4 specular = spec * _LightColor;
+
+                // アルベドテクスチャ取得
+                fixed4 albedo = tex2D(_MainTex, i.uv);
+
+                // ライティング合成
+                fixed4 color = albedo * diffuse + specular;
+                color.a = albedo.a; // アルファは元テクスチャのまま
+
+                return color;
+            }
+
             ENDCG
         }
     }
