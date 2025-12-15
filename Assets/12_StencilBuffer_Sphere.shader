@@ -6,7 +6,7 @@ Shader "Unlit/12_StencilBuffer_Sphere"
     }
     SubShader
     {
-        Tags { "RenderType"="Opaque" }
+        Tags { "Queue"="Transparent+1" }
         Pass
         {
             Stencil
@@ -19,11 +19,13 @@ Shader "Unlit/12_StencilBuffer_Sphere"
             #pragma vertex vert
             #pragma fragment frag                        
             #include "UnityCG.cginc"
+
             struct appdata
             {
                 float4 vertex : POSITION;
                 float2 uv : TEXCOORD0;
             };
+
             struct v2f
             {
                 float2 uv : TEXCOORD0;                
@@ -40,6 +42,7 @@ Shader "Unlit/12_StencilBuffer_Sphere"
                 o.uv = TRANSFORM_TEX(v.uv, _MainTex);                
                 return o;
             }
+
             fixed4 frag (v2f i) : SV_Target
             {                
                 fixed4 col = tex2D(_MainTex, i.uv);                                             
